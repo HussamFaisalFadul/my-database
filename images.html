@@ -1,17 +1,509 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <title>تفسير مصور</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; background: #f7f7f7; }
-    img { max-width: 90%; margin: 20px auto; display: block; border-radius: 12px; box-shadow: 0 0 10px #aaa; }
-  </style>
-</head>
-<body>
-  <h1>تفسير مصور</h1>
-  <img src="images/1.jpg" alt="صورة 1">
-  <img src="images/2.jpg" alt="صورة 2">
-  <img src="images/3.jpg" alt="صورة 3">
-</body>
-</html>
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+import 'QuranApp.dart';
+import 'categories_page.dart';
+import 'tafsir_page.dart';
+import 'quiz_page3.dart';
+import 'tafsir_of_the_day_page.dart';
+import 'daily_ward_page.dart';
+import 'qibla_direction_page.dart';
+import 'info.dart';
+import 'db_helper.dart';
+import 'daily_info_card.dart';
+import 'tafsir_summary_card.dart';
+import 'QuizPage.dart';
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  late WebViewController _controller;
+  late WebViewController _githubImagesController;
+  bool _isWebViewLoading = true;
+  bool _hasConnectionError = false;
+  bool _isGithubImagesLoading = true;
+  bool _hasGithubImagesError = false;
+  String? _githubImagesErrorMessage;
+  Timer? _retryTimer;
+  StreamSubscription<ConnectivityResult>? _connectivitySubscription;
+
+  final String _prayerTimesUrlTemplate = 'https://timesprayer.today/widget_frame.php?frame=1&sound=false&theme=w3-light-blue&id={ID_NUMBER}';
+  final String _githubImagesUrl = 'https://raw.githubusercontent.com/HussamFaisalFadul/my-database/main/images.html';
+
+  static const String _savedCityIdKey = 'savedCityId';
+  static const String _savedCityNameKey = 'savedCityName';
+
+  int _currentCityId = 20;
+  String _currentCityNameDisplay = 'المدينة الحالية';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initConnectivityListener();
+    _loadInitialWebView();
+    _initializeGithubImagesWebView();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed. Reloading WebViews.');
+      _reloadWebView();
+      _reloadGithubImagesWebView();
+    }
+  }
+
+  void _initConnectivityListener() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
+      if (result != ConnectivityResult.none) {
+        _startRetryTimer();
+      }
+    });
+  }
+
+  void _startRetryTimer() {
+    _retryTimer?.cancel();
+    _retryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!_isWebViewLoading && _hasConnectionError) {
+        _reloadWebView();
+      }
+      if (!_isGithubImagesLoading && _hasGithubImagesError) {
+        _reloadGithubImagesWebView();
+      }
+      if (!_hasConnectionError && !_hasGithubImagesError) {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _reloadWebView() {
+    if (mounted && _controller != null) {
+      setState(() {
+        _isWebViewLoading = true;
+        _hasConnectionError = false;
+      });
+      _controller.loadRequest(Uri.parse(_getCurrentPrayerTimesUrl()));
+    }
+  }
+
+  void _reloadGithubImagesWebView() {
+    if (mounted && _githubImagesController != null) {
+      setState(() {
+        _isGithubImagesLoading = true;
+        _hasGithubImagesError = false;
+        _githubImagesErrorMessage = null;
+      });
+      _githubImagesController.loadRequest(Uri.parse(_githubImagesUrl));
+    }
+  }
+
+  String _getCurrentPrayerTimesUrl() {
+    return _prayerTimesUrlTemplate.replaceFirst('{ID_NUMBER}', _currentCityId.toString());
+  }
+
+  Future<void> _loadInitialWebView() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    _currentCityId = prefs.getInt(_savedCityIdKey) ?? 20;
+    _currentCityNameDisplay = prefs.getString(_savedCityNameKey) ?? 'المدينة الحالية';
+
+    String urlToLoad = _getCurrentPrayerTimesUrl();
+    _initializeWebView(urlToLoad);
+  }
+
+  void _initializeWebView(String urlToLoad) {
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            if (mounted) {
+              setState(() {
+                _isWebViewLoading = progress < 100;
+              });
+            }
+          },
+          onPageStarted: (String url) {
+            if (mounted) {
+              setState(() {
+                _isWebViewLoading = true;
+                _hasConnectionError = false;
+              });
+            }
+          },
+          onPageFinished: (String url) async {
+            if (mounted) {
+              setState(() {
+                _isWebViewLoading = false;
+                _hasConnectionError = false;
+              });
+              await _extractAndSaveCityIdAndNameFromUrl(url);
+            }
+          },
+          onWebResourceError: (WebResourceError error) {
+            debugPrint('WebView Error loading ${error.url ?? urlToLoad}: ${error.description}');
+            if (mounted) {
+              setState(() {
+                _isWebViewLoading = false;
+                _hasConnectionError = true;
+              });
+              _startRetryTimer();
+            }
+          },
+          onNavigationRequest: (NavigationRequest request) async {
+            debugPrint('Navigation detected to: ${request.url}');
+            await _extractAndSaveCityIdAndNameFromUrl(request.url);
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(urlToLoad));
+  }
+
+  void _initializeGithubImagesWebView() {
+    _githubImagesController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            if (mounted) {
+              setState(() {
+                _isGithubImagesLoading = progress < 100;
+              });
+            }
+          },
+          onPageStarted: (String url) {
+            if (mounted) {
+              setState(() {
+                _isGithubImagesLoading = true;
+                _hasGithubImagesError = false;
+                _githubImagesErrorMessage = null;
+              });
+            }
+          },
+          onPageFinished: (String url) {
+            if (mounted) {
+              setState(() {
+                _isGithubImagesLoading = false;
+                _hasGithubImagesError = false;
+              });
+            }
+          },
+          onWebResourceError: (WebResourceError error) {
+            debugPrint('GitHub Images WebView Error: ${error.description}, URL: ${error.url}, Error Code: ${error.errorCode}');
+            if (mounted) {
+              setState(() {
+                _isGithubImagesLoading = false;
+                _hasGithubImagesError = true;
+                _githubImagesErrorMessage = error.description;
+              });
+              _startRetryTimer();
+            }
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(_githubImagesUrl));
+  }
+
+  Future<void> _extractAndSaveCityIdAndNameFromUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final String? idStr = uri.queryParameters['id'];
+      final String? cityName = uri.queryParameters['city'];
+
+      int? newId;
+      if (idStr != null) {
+        newId = int.tryParse(idStr);
+      }
+
+      String newCityNameDisplay = _currentCityNameDisplay;
+
+      if (newId != null && newId != _currentCityId) {
+        if (mounted) {
+          setState(() {
+            _currentCityId = newId!;
+          });
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_savedCityIdKey, _currentCityId);
+      }
+
+      if (cityName != null && cityName.isNotEmpty) {
+        newCityNameDisplay = cityName.replaceAll('-', ' ').toUpperCase();
+      } else {
+        newCityNameDisplay = 'مدينة (ID: $_currentCityId)';
+      }
+
+      if (newCityNameDisplay != _currentCityNameDisplay) {
+        if (mounted) {
+          setState(() {
+            _currentCityNameDisplay = newCityNameDisplay;
+          });
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_savedCityNameKey, _currentCityNameDisplay);
+      }
+
+      debugPrint('City ID saved: $_currentCityId, Display Name: $_currentCityNameDisplay');
+    } catch (e) {
+      debugPrint('Error parsing URL for city ID/name: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    _connectivitySubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<HomeSection> sections = [
+      HomeSection(
+        title: '🌿 الأذكار',
+        icon: Icons.brightness_2,
+        color: Colors.green,
+        gradient: [Colors.green, Colors.green.shade700],
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => CategoriesPage()));
+        },
+      ),
+      HomeSection(
+        title: '📖 القرآن والتفسير',
+        icon: Icons.menu_book,
+        color: Colors.teal,
+        gradient: [Colors.teal, Colors.teal.shade700],
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => TafsirPage()));
+        },
+      ),
+      HomeSection(
+        title: '🕋 اتجاه القبلة',
+        icon: Icons.assistant_direction,
+        color: Colors.brown,
+        gradient: [Colors.brown, Colors.brown.shade700],
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => QiblaDirectionPage()));
+        },
+      ),
+      HomeSection(
+        title: 'مواقيت الصلاة',
+        icon: Icons.access_time,
+        color: Colors.amber,
+        gradient: [Colors.amber, Colors.amber.shade700],
+        onTap: () async {
+          final prefs = await SharedPreferences.getInstance();
+          final cityId = prefs.getInt(_savedCityIdKey) ?? 20;
+          Navigator.push(context, MaterialPageRoute(builder: (context) => TafsirOfTheDayPage(cityId: cityId)));
+        },
+      ),
+      HomeSection(
+        title: '☀️ وردك اليوم',
+        icon: Icons.sunny,
+        color: Colors.blue,
+        gradient: [Colors.blue, Colors.blue.shade700],
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => DailyWardByPages()));
+        },
+      ),
+      HomeSection(
+        title: '🏆 المسابقة',
+        icon: Icons.emoji_events,
+        color: Colors.orange,
+        gradient: [Colors.orange, Colors.deepOrange],
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => QuizPage()));
+        },
+      ),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'واضح',
+          style: GoogleFonts.cairo(
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            letterSpacing: 2,
+          ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.teal.shade700, Colors.green.shade700],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.teal.shade50,
+                Colors.white,
+              ],
+            ),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        Icon(Icons.mosque, size: 40, color: Colors.teal),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'مرحباً بك',
+                                style: GoogleFonts.cairo(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                              Text(
+                                'استمتع بتجربة روحية مميزة',
+                                style: GoogleFonts.cairo(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                TafsirSummaryCard(cityId: _currentCityId),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 190 + 30.0,
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      children: [
+                        WebViewWidget(controller: _controller),
+                        if (_isWebViewLoading && !_hasConnectionError)
+                          const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        if (_hasConnectionError)
+                          Container(
+                            color: Colors.white,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'جار التحديث... يلزم وجود إنترنت',
+                                      style: GoogleFonts.cairo(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.red,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    const CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const DailyInfoCard(),
+                const SizedBox(height: 20),
+                // New GitHub Images Card
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      'صور إسلامية',
+                      style: GoogleFonts.cairo(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.teal.shade800,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ),
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    children: [
+                      SizedBox(
+                        height: 300,
+                        child: WebViewWidget(controller: _githubImagesController),
+                      ),
+                      if (_isGithubImagesLoading && !_hasGithubImagesError)
+                        const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      if (_hasGithubImagesError)
+                        Container(
+                          color: Colors.white,
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.error_outline, size: 48, color: Colors.red),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    _githubImagesErrorMessage != null
+                                        ? 'خطأ في تحميل الصور من GitHub: $_githubImagesErrorMessage'
+                                        : 'خ
