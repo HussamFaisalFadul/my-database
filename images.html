@@ -2,15 +2,47 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>تفسير مصور</title>
   <style>
     body { font-family: sans-serif; text-align: center; background: #f7f7f7; }
-    img { max-width: 90%; margin: 20px auto; display: block; border-radius: 12px; box-shadow: 0 0 10px #aaa; }
+    img {
+      max-width: 90%;
+      margin: 20px auto;
+      display: none; /* إخفاء جميع الصور في البداية */
+      border-radius: 12px;
+      box-shadow: 0 0 10px #aaa;
+    }
+    /* إظهار الصورة الأولى فقط عند تحميل الصفحة */
+    img:first-of-type {
+      display: block;
+    }
   </style>
 </head>
 <body>
-  <img src="images/1.jpg" alt="صورة 1">
-  <img src="images/2.jpg" alt="صورة 2">
-  <img src="images/3.jpg" alt="صورة 3">
+  <h1>تفسير مصور</h1>
+  <img id="image1" src="images/1.jpg" alt="صورة 1">
+  <img id="image2" src="images/2.jpg" alt="صورة 2">
+  <img id="image3" src="images/3.jpg" alt="صورة 3">
+
+  <script>
+    // الحصول على جميع الصور الموجودة في الصفحة
+    const images = document.querySelectorAll('img');
+    let currentIndex = 0;
+
+    // دالة لإظهار الصورة التالية
+    function showNextImage() {
+      // إخفاء الصورة الحالية
+      images[currentIndex].style.display = 'none';
+
+      // زيادة الفهرس (index)
+      currentIndex = (currentIndex + 1) % images.length;
+
+      // إظهار الصورة التالية
+      images[currentIndex].style.display = 'block';
+    }
+
+    // تشغيل الدالة كل 5 ثوانٍ
+    // يمكنك تغيير الرقم 5000 إلى أي مدة بالمللي ثانية (مثلاً: 3000 لـ 3 ثوانٍ)
+    setInterval(showNextImage, 5000);
+  </script>
 </body>
 </html>
