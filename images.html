@@ -9,10 +9,11 @@
       background: #f7f7f7; 
     }
     img {
-      width: 200px;       /* عرض ثابت */
-      height: 200px;      /* ارتفاع ثابت */
+      width: 80%;          /* عرض بالنسبة المئوية */
+      aspect-ratio: 4 / 3; /* نسبة الطول للعرض (مثلاً 4:3) */
+      object-fit: cover;   /* قص الزائد بدون تشويه */
       margin: 20px auto;
-      display: none; 
+      display: none;
       border-radius: 12px;
       box-shadow: 0 0 10px #aaa;
     }
@@ -24,7 +25,6 @@
 <body>
   <img id="image1" src="images/1.jpg" alt="صورة 1">
   <img id="image2" src="images/2.jpg" alt="صورة 2">
-  <img id="image3" src="images/3.jpg" alt="صورة 2">
 
   <script>
     const images = document.querySelectorAll('img');
