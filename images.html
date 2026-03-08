@@ -7,52 +7,44 @@
     img {
       max-width: 90%;
       margin: 20px auto;
-      display: none; /* إخفاء جميع الصور في البداية */
+      display: none;
       border-radius: 12px;
       box-shadow: 0 0 10px #aaa;
     }
-    /* إظهار الصورة الأولى فقط عند تحميل الصفحة */
     img:first-of-type {
       display: block;
     }
   </style>
 </head>
 <body>
-<body>
 
- <a href="market://details?id=com.hussam.azkar">
-    <img id="image1" src="images/photo_5868304999140494348_y.jpg" alt="تحميل التطبيق">
-  </a
+  <img id="image1" src="images/photo_5868304999140494348_y.jpg" alt="تحميل التطبيق" onclick="openStore()">
+  <img id="image2" src="images/2.png" alt="صورة 2" onclick="openStore()">
+  <img id="image3" src="images/photo_5868304999140494348_y.jpg" alt="صورة 3" onclick="openStore()">
 
-  <a href="https://play.google.com/store/apps/details?id=com.hussam.azkar" target="_system">
-    <img id="image2" src="images/2.png" alt="صورة 2">
-  </a>
-
-  <a href="https://play.google.com/store/apps/details?id=com.hussam.azkar" target="_system">
-    <img id="image3" src="images/photo_5868304999140494348_y.jpg" alt="صورة 3">
-  </a>
-
-</body>
   <script>
-    // الحصول على جميع الصور الموجودة في الصفحة
+    function openStore() {
+      // محاولة فتح تطبيق Google Play مباشرة
+      window.location.href = "market://details?id=com.hussam.azkar";
+      
+      // إذا فشل، يفتح الموقع بعد ثانية
+      setTimeout(function() {
+        window.location.href = "https://play.google.com/store/apps/details?id=com.hussam.azkar";
+      }, 1000);
+    }
+
+    // الحصول على جميع الصور
     const images = document.querySelectorAll('img');
     let currentIndex = 0;
 
-    // دالة لإظهار الصورة التالية
     function showNextImage() {
-      // إخفاء الصورة الحالية
       images[currentIndex].style.display = 'none';
-
-      // زيادة الفهرس (index)
       currentIndex = (currentIndex + 1) % images.length;
-
-      // إظهار الصورة التالية
       images[currentIndex].style.display = 'block';
     }
 
-    // تشغيل الدالة كل 5 ثوانٍ
-    // يمكنك تغيير الرقم 5000 إلى أي مدة بالمللي ثانية (مثلاً: 3000 لـ 3 ثوانٍ)
     setInterval(showNextImage, 5000);
   </script>
+
 </body>
 </html>
